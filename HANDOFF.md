@@ -1,17 +1,18 @@
 # Handover: splitting the Springboks Tour Predictor from the Bok family predictor
 
 ## Status (26 Sep 2026)
-- DONE step 3: Firebase project `springboks-predictor` created (Firestore,
-  africa-south1), rules published and tested (reads OK, picks/results OK,
-  delete/create-untagged/fixture edits denied).
-- DONE step 4: 7 office games copied and verified ALL MATCH; the live app at
-  /charne/tour/ now uses the new project. Anyone who had the page open before
-  the switch may still write a pick to the OLD project until they reload —
-  re-run `migrate.py verify` and reconcile any missing picks before step 6.
-- TODO: steps 1-2 (Jacques creates the repo; push this folder; enable Pages),
-  step 5 (forward /charne/tour/), step 6 (clean old DB), step 7.
-
-For Claude (or Jacques) continuing on another machine. Written 25 Sep 2026.
+- DONE: repo `elchoerob-stack/springboks-predictor` (this one) with Pages on
+  `main` / root — live at https://elchoerob-stack.github.io/springboks-predictor/.
+- DONE: own Firebase project `springboks-predictor` (africa-south1); rules
+  published and tested; 7 office games copied and verified ALL MATCH; app
+  switched to it.
+- DONE: old address /charne/tour/ forwards here (charne repo, branch
+  `claude/sa-score-prediction-app-eia010`); its service worker clears the old
+  cache and unregisters.
+- TODO (scheduled Sun 27 Sep 09:00 SAST in the original cloud session):
+  carry over any Perth picks saved to the old project by pages open before
+  the switch, then delete the `cms-*` docs from `sa-predictions`.
+- From here on, all changes to this app go to THIS repo's `main`.
 
 ## Why
 The CMS office predictor and the Bok family predictor shared a web address
