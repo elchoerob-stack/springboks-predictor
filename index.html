@@ -375,6 +375,25 @@ var typingNew = false;
 var tab = "today";
 var ready = false;
 var blocked = false;
+/* Scores typed but not yet saved, per match. The screen is rebuilt whenever
+   anyone saves a pick (and the countdown used to rebuild it every 30s), which
+   wiped half-typed scores; drafts survive those rebuilds. */
+var DRAFT_KEY = "cms-tour-drafts";
+var drafts = {};
+try { drafts = JSON.parse(sessionStorage.getItem(DRAFT_KEY) || "{}") || {}; } catch(e){ drafts = {}; }
+function keepDrafts(){ try { sessionStorage.setItem(DRAFT_KEY, JSON.stringify(drafts)); } catch(e){} }
+function scoreVal(m, e, side){
+  var d = drafts[m.id];
+  if (d && d[side] !== undefined && d[side] !== "") return esc(d[side]);
+  return e ? e[side] : "";
+}
+/* True while someone is typing a score — rebuilding the view then would drop
+   their keyboard and cursor, so the rebuild waits until they leave the box. */
+function typingScore(){
+  var a = document.activeElement;
+  return !!(a && a.matches && a.matches("[data-m] input.hs, [data-m] input.as"));
+}
+var renderPending = false;
 /* The same person sometimes signed in under two spellings on different
    phones, which split their picks — and their points — across two rows on the
    log. Each alias here is folded into one name everywhere the app reads picks,
@@ -623,6 +642,8 @@ function counts(){
   document.getElementById("n-results").textContent = matches.filter(function(m){ return !!m.f; }).length;
 }
 function render(){
+  if (typingScore()) { renderPending = true; counts(); return; }
+  renderPending = false;
   counts();
   renderInstall();
   document.getElementById("warn").innerHTML = blocked
@@ -768,7 +789,7 @@ function renderToday(){
       (m.f
         ? '<div class="cd">' + esc(m.h) + ' ' + m.f[0] + ' — ' + m.f[1] + ' ' + esc(m.a) + '</div>'
         : started ? '<div class="cd">🔴 Kicked off — picks are locked</div>'
-                  : (m.ko ? '<div class="cd">⏱ Kick-off in ' + countdown(m.ko) + '</div>' : '')) +
+                  : (m.ko ? '<div class="cd">⏱ Kick-off in <span class="cd-live" data-ko="' + m.ko + '">' + countdown(m.ko) + '</span></div>' : '')) +
       guideBtnHtml(m) +
     '</div>' +
     ((!myName || editingName)
@@ -780,10 +801,10 @@ function renderToday(){
           : '<div class="card" data-m="' + esc(m.id) + '">' +
               '<div class="score-grid">' +
                 '<div class="side"><label>' + esc(m.h) + '</label>' +
-                  '<input class="hs" type="number" inputmode="numeric" min="0" max="150" placeholder="0" value="' + (e ? e.hs : "") + '"></div>' +
+                  '<input class="hs" type="number" inputmode="numeric" min="0" max="150" placeholder="0" value="' + scoreVal(m, e, "hs") + '"></div>' +
                 '<span class="dash">–</span>' +
                 '<div class="side"><label>' + esc(m.a) + '</label>' +
-                  '<input class="as" type="number" inputmode="numeric" min="0" max="150" placeholder="0" value="' + (e ? e.as : "") + '"></div>' +
+                  '<input class="as" type="number" inputmode="numeric" min="0" max="150" placeholder="0" value="' + scoreVal(m, e, "as") + '"></div>' +
               '</div>' +
               (e ? '<div class="done">✅ Saved — you can change it until kick-off</div>' : '') +
               '<button class="btn quiet save-one">' + (e ? "Update my pick" : "Save my pick") + '</button>' +
@@ -824,10 +845,10 @@ function renderPredict(){
         '<span class="m-when">' + esc(fmt(m.ko)) + (m.tbc ? " (provisional)" : "") + (m.vn ? " · " + esc(m.vn) : "") + '</span></div>' +
       '<div class="score-grid">' +
         '<div class="side"><label>' + esc(m.h) + '</label>' +
-          '<input class="hs" type="number" inputmode="numeric" min="0" max="150" placeholder="0" value="' + (e ? e.hs : "") + '"></div>' +
+          '<input class="hs" type="number" inputmode="numeric" min="0" max="150" placeholder="0" value="' + scoreVal(m, e, "hs") + '"></div>' +
         '<span class="dash">–</span>' +
         '<div class="side"><label>' + esc(m.a) + '</label>' +
-          '<input class="as" type="number" inputmode="numeric" min="0" max="150" placeholder="0" value="' + (e ? e.as : "") + '"></div>' +
+          '<input class="as" type="number" inputmode="numeric" min="0" max="150" placeholder="0" value="' + scoreVal(m, e, "as") + '"></div>' +
       '</div>' +
       (e ? '<div class="done">✅ Saved — you can change it until kick-off</div>' : '') +
       '<button class="btn quiet save-one">' + (e ? "Update my pick" : "Save my pick") + '</button>' +
@@ -849,7 +870,7 @@ function wirePredict(){
       var v = cardValues(btn.closest("[data-m]"));
       if (v.hs === "" || v.as === "") { toast("Fill in both scores first"); return; }
       if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
-      save(v.m, v.hs, v.as).then(function(){ toast("Saved — good luck!"); }).catch(function(){});
+      save(v.m, v.hs, v.as).then(function(){ delete drafts[v.m.id]; keepDrafts(); toast("Saved — good luck!"); }).catch(function(){});
     };
   });
   var all = document.getElementById("save-all");
@@ -859,7 +880,7 @@ function wirePredict(){
     Array.prototype.forEach.call(document.querySelectorAll("[data-m]"), function(card){
       var v = cardValues(card);
       if (v.hs === "" || v.as === "") return;
-      n++; jobs.push(save(v.m, v.hs, v.as).catch(function(){}));
+      n++; jobs.push(save(v.m, v.hs, v.as).then(function(){ delete drafts[v.m.id]; keepDrafts(); }).catch(function(){}));
     });
     if (!n) { toast("Fill in at least one match"); return; }
     Promise.all(jobs).then(function(){ toast("Saved " + n + " pick" + (n===1?"":"s") + " — good luck!"); });
@@ -1385,7 +1406,32 @@ if ("serviceWorker" in navigator && location.protocol === "https:") {
 }
 renderInstall();
 render();
-setInterval(function(){ if (!ready) return; counts(); if (tab === "today") renderToday(); renderWi(); }, 30000);
+/* Every 30s: tick the countdown label in place. Only rebuild the view when a
+   match has just kicked off (its picks lock), and even then not mid-typing. */
+var lockSig = "";
+setInterval(function(){
+  if (!ready) return;
+  counts();
+  Array.prototype.forEach.call(document.querySelectorAll(".cd-live"), function(n){
+    n.textContent = countdown(Number(n.getAttribute("data-ko")));
+  });
+  var sig = matches.map(function(m){ return locked(m) ? 1 : 0; }).join("");
+  if (sig !== lockSig) { var first = !lockSig; lockSig = sig; if (!first) render(); }
+  renderWi();
+}, 30000);
+/* Remember what's typed, and catch up on any rebuild held back while typing. */
+document.addEventListener("input", function(ev){
+  var t = ev.target, card = t.closest && t.closest("[data-m]");
+  if (!card || !t.matches("input.hs, input.as")) return;
+  var id = card.getAttribute("data-m");
+  drafts[id] = { hs: card.querySelector(".hs").value, as: card.querySelector(".as").value };
+  keepDrafts();
+});
+document.addEventListener("focusout", function(){
+  if (!renderPending) return;
+  // Wait a beat so a tap on Save lands on the button before the view is rebuilt.
+  setTimeout(function(){ if (renderPending && !typingScore()) render(); }, 400);
+});
 </script>
 </body>
 </html>
